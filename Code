@@ -1,0 +1,1117 @@
+
+
+pip install schemdraw
+
+"""The given block of code utilizes the Schemdraw Python library to programmatically construct and visualize a power electronics circuit diagram. The library provides a symbolic representation of electronic components, which are placed and interconnected through sequential commands inside a drawing context. The script begins by importing schemdraw along with its elements module, which contains standard circuit components such as sources, switches, and passive devices. A drawing canvas is created using the with schemdraw.Drawing() as d: statement, which ensures that all subsequent component additions are registered within the same schematic figure.
+
+The first element added is a voltage source, oriented upward and labeled as Vin, representing the input supply to the converter circuit. Next, a single-pole double-throw (SPDT) switch, denoted here as SW, is placed toward the right of the source. In practical implementations, this symbol corresponds to a power electronic switch such as a MOSFET or IGBT, which governs the energy transfer in the converter. Following the switch, a diode labeled D is connected downward, serving as the unidirectional conduction path typical in DC–DC converter topologies. The energy storage components are then introduced: an inductor (L) oriented horizontally to the right, which stores energy in its magnetic field, and a capacitor (C) connected downward, which smooths out voltage ripple across the load. To model the output consumption, a resistive load (R Load) is connected to the left of the capacitor, representing the power drawn by the external system.
+
+For circuit completeness, a ground reference is placed at the terminal of the capacitor, establishing the common potential of the system. Finally, a closing line is drawn from the start of the load resistor back to the negative terminal of the input source, thereby completing the current path. The sequential use of .at() and .to() functions specifies the spatial connections between components, ensuring an accurate schematic representation. Overall, this code systematically generates a fundamental DC–DC converter schematic (applicable to buck or boost configurations depending on switch control) using a clear, programmatic approach rather than manual drawing.
+"""
+
+import schemdraw
+import schemdraw.elements as elm
+
+with schemdraw.Drawing() as d:
+    # Voltage source
+    V1 = d.add(elm.SourceV().up().label('Vin'))
+
+    # Switch (MOSFET symbol)
+    S1 = d.add(elm.SwitchSpdt().right().label('SW'))
+
+    # Diode
+    D1 = d.add(elm.Diode().down().label('D'))
+
+    # Inductor
+    L1 = d.add(elm.Inductor().right().label('L'))
+
+    # Capacitor
+    C1 = d.add(elm.Capacitor().down().label('C'))
+
+    # Load resistor
+    R1 = d.add(elm.Resistor().left().label('R Load'))
+
+    # Ground
+    d.add(elm.Ground().at(C1.end))
+
+    # Close loop back to source
+    d.add(elm.Line().up().at(R1.start).to(V1.start))
+
+"""This code block simulates the dynamic response of a basic DC-DC converter under both normal operation and various fault conditions using Python's NumPy and Matplotlib libraries. The first section defines the circuit parameters, including the input voltage Vin, reference output voltage Vref, inductor L, capacitor C, load resistor R, and the switching frequency fs. The switching period Tsw is calculated as the inverse of the switching frequency, and the duty cycle is set according to the ideal voltage conversion ratio (duty = Vref/Vin). A time vector t is created for a total simulation duration of 20 milliseconds, discretized with a timestep dt that is fifty times smaller than the switching period to accurately capture the high-frequency switching behavior.
+
+The simulation loop is designed to model four operating modes: normal operation, switch open, switch shorted, and capacitor aging. For each mode, arrays iL and vC store the inductor current and capacitor voltage over time, respectively. At each timestep, the PWM switching condition is evaluated based on the current time and duty cycle. Depending on the fault mode, the switch voltage Vsw and effective capacitance C_eff are adjusted: in normal mode, the switch operates as expected; in switch open, it is always off; in switch short, it is permanently on; and in capacitor aging, the capacitance is reduced to simulate degradation.
+
+These updates are applied iteratively to model the transient behavior of the system over the entire simulation period. For analysis, the average steady-state voltage is computed over the last 10% of the simulation to evaluate the effect of faults on output regulation. Finally, the results for each mode are plotted in a 2x2 subplot arrangement, showing both inductor current iL and capacitor voltage vC over time, with the average voltage highlighted as a dashed line. This approach allows for a visual and quantitative assessment of the converter's performance under both ideal and degraded conditions, providing insights into fault tolerance and stability in power electronics systems.
+
+The four simulated fault modes provide insight into how the DC-DC converter behaves under common abnormal conditions. In the switch open scenario, the MOSFET fails to conduct, preventing energy transfer from the input to the output; this results in a drop of output voltage and demonstrates the importance of switch reliability. In the switch short case, the MOSFET remains permanently on, causing continuous inductor charging without proper PWM control, which can lead to overcurrent conditions and potential damage to both the inductor and load. The capacitor aging mode models a reduction in capacitance due to long-term degradation or thermal stress, leading to increased output voltage ripple and reduced voltage regulation. The normal operation case serves as a baseline, showing the intended steady-state response of the converter. Together, these scenarios illustrate how different component faults influence both transient and steady-state performance, highlighting the need for robust design and fault-tolerant strategies in power electronics systems.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+Vin = 24           # Input voltage
+Vref = 12          # Desired output
+L = 1e-3           # Inductor
+C = 100e-6         # Capacitor
+R = 10             # Load
+fs = 50e3          # Switching frequency (Hz)
+Tsw = 1/fs
+duty = Vref/Vin    # Ideal duty ratio
+
+# Simulation setup
+t_end = 20e-3      # Run for 20 ms to reach steady state
+dt = Tsw/50
+steps = int(t_end/dt)
+t = np.linspace(0, t_end, steps)
+
+# Fault cases
+fault_names = ["Normal", "Switch Open", "Switch Short", "Capacitor Aging"]
+
+plt.figure(figsize=(12,8))
+
+for mode in range(4):
+    iL = np.zeros(steps)
+    vC = np.zeros(steps)
+
+    for k in range(steps-1):
+        time = k*dt
+        pwm = (time % Tsw) < duty*Tsw  # normal PWM
+
+        if mode == 0:   # Normal
+            Vsw = Vin if pwm else 0
+            C_eff = C
+        elif mode == 1: # Switch open
+            Vsw = 0
+            C_eff = C
+        elif mode == 2: # Switch short
+            Vsw = Vin   # always ON
+            C_eff = C
+        elif mode == 3: # Capacitor aging
+            Vsw = Vin if pwm else 0
+            C_eff = C*0.2
+
+        diL = (Vsw - vC[k]) / L
+        dvC = (iL[k] - vC[k]/R) / C_eff
+
+        iL[k+1] = iL[k] + diL*dt
+        vC[k+1] = vC[k] + dvC*dt
+
+    # Average steady-state voltage
+    avg_v = np.mean(vC[int(0.9*steps):])  # last 10%
+
+    plt.subplot(2,2,mode+1)
+    plt.plot(t*1e3, vC, label="vC (V)")
+    plt.plot(t*1e3, iL, label="iL (A)")
+    plt.axhline(avg_v, color="red", linestyle="--", label=f"Avg vC={avg_v:.2f} V")
+    plt.title(f"{fault_names[mode]}")
+    plt.xlabel("Time [ms]")
+    plt.ylabel("Value")
+    plt.legend()
+    plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+"""This Python script performs a time-domain simulation of a basic buck converter under ideal conditions using the Euler integration method. The key circuit parameters are defined at the beginning, including the input voltage Vin, inductor L, capacitor C, load resistor R, and the PWM switching frequency f_sw. The duty cycle D is set to 0.5, corresponding to a 50% ON-time for the switch. The switching period Tsw is derived as the inverse of the switching frequency, and the simulation runs for a total of 2 milliseconds (t_end) with a fine timestep dt equal to Tsw/200, ensuring that the high-frequency switching behavior is accurately captured. A time vector t is created to represent the discrete time points at which the circuit state will be computed.
+
+Arrays iL and vC are initialized to store the inductor current and capacitor voltage, with both starting at zero to represent an unenergized initial condition. The main simulation loop iterates over each timestep, first determining whether the PWM switch is ON or OFF based on the current time modulo the switching period. When the switch is ON, the input voltage is applied to the inductor, generating a positive inductor voltage vL = Vin - vC, which increases the inductor current accordingly . When the switch is OFF, the diode conducts, and the inductor voltage reverses, causing the inductor current to decrease as energy is delivered to the load and capacitor.
+
+The capacitor current is calculated as the difference between inductor current and the load current (iC = iL - vC/R), and the capacitor voltage is updated accordingly. This iterative process captures the interaction between the inductor and capacitor, producing the characteristic triangular inductor current waveform and stepped capacitor voltage response typical of a buck converter under continuous conduction mode. Finally, the results are plotted using Matplotlib, with the inductor current and output voltage displayed in separate subplots over time, allowing visual analysis of the transient and steady-state behavior of the converter. This simulation demonstrates the fundamental principles of PWM-based voltage conversion and energy storage in passive components.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+Vin = 24
+L = 1e-3
+C = 100e-6
+R = 10
+f_sw = 50e3   # 50 kHz PWM switching
+D = 0.5       # Duty cycle
+Tsw = 1/f_sw
+t_end = 2e-3  # simulate 2 ms
+dt = Tsw/200  # fine resolution
+
+# Time vector
+t = np.arange(0, t_end, dt)
+
+# Storage
+iL = np.zeros_like(t)
+vC = np.zeros_like(t)
+
+# Initial
+iL[0] = 0
+vC[0] = 0
+
+# Simulation loop
+for k in range(1, len(t)):
+    # PWM ON if within duty cycle
+    pwm_on = (t[k] % Tsw) < (D*Tsw)
+
+    if pwm_on:
+        # Switch ON → Vin applied to inductor
+        vL = Vin - vC[k-1]
+    else:
+        # Switch OFF → Diode conduction
+        vL = -vC[k-1]
+
+    # Update inductor current
+    di = vL/L * dt
+    iL[k] = iL[k-1] + di
+
+    # Capacitor current = inductor current - load current
+    iC = iL[k] - vC[k-1]/R
+    dv = iC/C * dt
+    vC[k] = vC[k-1] + dv
+
+# Plot results
+plt.figure(figsize=(10,5))
+plt.subplot(2,1,1)
+plt.plot(t*1e3, iL, label='Inductor Current')
+plt.ylabel('iL [A]')
+plt.legend()
+
+plt.subplot(2,1,2)
+plt.plot(t*1e3, vC, label='Output Voltage')
+plt.xlabel('Time [ms]')
+plt.ylabel('vC [V]')
+plt.legend()
+plt.show()
+
+"""This code simulates a closed-loop DC–DC buck converter using a PI (Proportional-Integral) controller to regulate the output voltage. The circuit includes an input voltage of 12 V, a desired output of 5 V, an inductor, a capacitor, and a resistive load. The PWM switching frequency is set at 50 kHz, and the simulation runs for 5 ms with a very small time step to accurately capture the fast switching behavior. Arrays are initialized to store the inductor current, capacitor voltage, and duty cycle at each time step. A sawtooth waveform is used as the PWM carrier, which is compared with the controller output to generate the switching signal.
+
+During the simulation, the error between the desired output voltage and the current capacitor voltage is calculated at each time step. The PI controller processes this error to adjust the duty cycle, which determines how long the switch remains ON or OFF within each PWM period. When the switch is ON, the input voltage is applied to the inductor, increasing the current; when it is OFF, the diode conducts and the inductor current flows to the load and capacitor. The capacitor voltage and inductor current are updated at each step, reflecting the converter’s transient and steady-state behavior.
+
+The results are visualized in three plots: the output voltage over time, the inductor current over time, and the evolving duty cycle generated by the PI controller. This simulation demonstrates how a feedback controller continuously adjusts the switch operation to maintain the output voltage close to the reference, providing a clear example of closed-loop voltage regulation in a DC–DC converter system.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+Vin = 12      # Input voltage
+Vref = 5      # Desired output voltage
+L = 100e-6    # Inductance
+C = 100e-6    # Capacitance
+R = 10        # Load resistance
+fsw = 50e3    # Switching frequency
+T = 5e-3      # Simulation time (5 ms)
+dt = 1e-6     # Time step
+
+# PI controller gains
+Kp = 0.05
+Ki = 500
+
+# Time array
+t = np.arange(0, T, dt)
+
+# Initialize states
+iL = 0
+vC = 0
+integral = 0
+iL_arr = []
+vC_arr = []
+duty_arr = []
+
+# Sawtooth carrier for PWM
+carrier = np.linspace(0, 1, int(1/(fsw*dt)))
+
+for ti in t:
+    # Error and PI control
+    error = Vref - vC
+    integral += error * dt
+    Vcontrol = Kp*error + Ki*integral  # PI output
+
+    # Clamp duty cycle between 0 and 1
+    D = max(0, min(1, Vcontrol/Vin))
+
+    # Generate PWM signal
+    pwm_index = int((ti/dt) % len(carrier))
+    switch = 1 if (D > carrier[pwm_index]) else 0
+
+    # Differential equations
+    if switch == 1:
+        diL = (Vin - vC)/L
+    else:
+        diL = -vC/L
+    dvC = (iL - vC/R)/C
+
+    # Update states
+    iL += diL*dt
+    vC += dvC*dt
+
+    # Store
+    iL_arr.append(iL)
+    vC_arr.append(vC)
+    duty_arr.append(D)
+
+# Plot results
+plt.figure(figsize=(12,6))
+plt.subplot(3,1,1)
+plt.plot(t, vC_arr, label="Output Voltage Vc")
+plt.axhline(Vref, color='r', linestyle='--', label="Vref")
+plt.legend()
+plt.grid()
+
+plt.subplot(3,1,2)
+plt.plot(t, iL_arr, label="Inductor Current iL")
+plt.legend()
+plt.grid()
+
+plt.subplot(3,1,3)
+plt.plot(t, duty_arr, label="Duty Cycle (PI)")
+plt.legend()
+plt.grid()
+
+plt.tight_layout()
+plt.show()
+
+"""This code simulates the response of a buck converter to a sudden change in load using Python’s scipy library for numerical integration. The circuit consists of a 12 V input, an inductor, a capacitor, and a resistive load. Initially, the load resistance is 10 Ω, which drops to 5 Ω at a specified disturbance time of 5 ms. The duty ratio of the switch is set at 50%, representing equal ON and OFF times in each switching cycle. The converter dynamics are modeled as an average system, capturing the overall effect of the switching without simulating each individual PWM pulse.
+
+The simulation defines a function that updates the inductor current and capacitor voltage at each time step. Before the disturbance, the converter operates normally, supplying the initial load. After the disturbance, the load reduction causes an immediate change in the current drawn from the capacitor, prompting the converter to adjust the inductor current to maintain voltage. The solve_ivp function is used to integrate these dynamics over a 20 ms simulation period.
+
+The results are plotted in two subplots: the inductor current and the capacitor voltage over time. A vertical line marks the instant of load change, highlighting the transient response. This simulation demonstrates how a buck converter reacts to sudden load variations, showing both the immediate current change and the voltage stabilization, which is essential for understanding converter robustness and load regulation performance in practical applications.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+# Parameters
+Vin = 12.0      # Input voltage [V]
+L = 1e-3        # Inductance [H]
+C = 100e-6      # Capacitance [F]
+R1 = 10.0       # Initial Load Resistance [Ohm]
+R2 = 5.0        # Load Resistance after disturbance [Ohm]
+t_disturb = 0.005  # Disturbance time [s]
+D = 0.5         # Duty ratio (50%)
+
+# System dynamics with load disturbance
+def buck_dynamics(t, x):
+    iL, vC = x
+
+    # Switch equivalent model (average model)
+    vL = D * Vin - vC
+
+    # Load changes at t_disturb
+    R = R1 if t < t_disturb else R2
+
+    diL = vL / L
+    dvC = (iL - vC / R) / C
+    return [diL, dvC]
+
+# Initial conditions
+x0 = [0, 0]
+
+# Simulation time
+t_span = (0, 0.02)
+t_eval = np.linspace(*t_span, 2000)
+
+sol = solve_ivp(buck_dynamics, t_span, x0, t_eval=t_eval, method='RK45')
+
+# Results
+iL = sol.y[0]
+vC = sol.y[1]
+
+# Plot results
+plt.figure(figsize=(10,5))
+plt.subplot(2,1,1)
+plt.plot(sol.t*1000, iL, label="Inductor Current iL")
+plt.axvline(t_disturb*1000, color='r', linestyle='--', label="Load Disturbance")
+plt.ylabel("iL (A)")
+plt.legend()
+plt.grid()
+
+plt.subplot(2,1,2)
+plt.plot(sol.t*1000, vC, label="Capacitor Voltage vC", color='orange')
+plt.axvline(t_disturb*1000, color='r', linestyle='--')
+plt.xlabel("Time (ms)")
+plt.ylabel("vC (V)")
+plt.legend()
+plt.grid()
+
+plt.suptitle("Buck Converter Response to Load Step Disturbance", fontsize=14)
+plt.show()
+
+"""This code simulates a buck converter under closed-loop PI control using Python’s scipy library for continuous-time integration. The circuit includes a 12 V input, an inductor, a capacitor, a resistive load, and a desired output voltage of 5 V. The PI controller is implemented with specified proportional and integral gains to regulate the output voltage by adjusting the duty ratio of the switch. The simulation runs for 50 ms with a very fine time step to accurately capture the converter dynamics and controller response.
+
+The system dynamics are defined in a function that updates the inductor current, capacitor voltage, and the integral of the voltage error at each instant. The PI controller calculates the duty ratio based on the current error and accumulated error, and the value is clamped between 0 and 1 to ensure it remains within the physical limits of the switch. The inductor and capacitor states are then updated according to the control input, representing the interaction between the power stage and the controller.
+
+The results show the output voltage over time compared with the reference voltage, illustrating how the PI controller drives the system to maintain the desired voltage. This simulation demonstrates closed-loop voltage regulation, showing how the controller dynamically adjusts the converter operation to achieve stable output voltage despite initial conditions or transient variations, highlighting the effectiveness of feedback control in practical power electronics systems.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+# Parameters
+Vin = 12      # Input voltage
+L = 1e-3      # Inductor (H)
+C = 100e-6    # Capacitor (F)
+R = 10        # Load (Ohm)
+Vref = 5      # Desired output voltage
+
+# PI controller gains
+Kp = 0.05
+Ki = 500
+
+# Simulation time
+tspan = (0, 0.05)
+dt = 1e-5
+times = np.arange(tspan[0], tspan[1], dt)
+
+# States: [iL, vC, integral_error]
+def buck_dynamics(t, x):
+    iL, vC, integ_e = x
+
+    # Control error
+    error = Vref - vC
+    duty = Kp*error + Ki*integ_e
+
+    # Saturate duty between 0 and 1
+    duty = max(0, min(1, duty))
+
+    # Inductor current dynamics
+    diL = (Vin*duty - vC)/L
+    dvC = (iL - vC/R)/C
+    dInt = error  # for integral action
+
+    return [diL, dvC, dInt]
+
+# Solve ODE
+x0 = [0, 0, 0]  # initial [iL, vC, integral_error]
+sol = solve_ivp(buck_dynamics, tspan, x0, t_eval=times, max_step=dt)
+
+# Extract results
+iL = sol.y[0]
+vC = sol.y[1]
+
+# Plot
+plt.figure(figsize=(10,5))
+plt.plot(times, vC, label="Output Voltage Vc")
+plt.axhline(Vref, color='r', linestyle='--', label="Reference")
+plt.xlabel("Time (s)")
+plt.ylabel("Voltage (V)")
+plt.title("Buck Converter with PI Control")
+plt.legend()
+plt.grid()
+plt.show()
+
+"""This code simulates a buck converter with fault injection and simple fault detection using a PI controller for voltage regulation. The circuit consists of a 24 V input, inductor, capacitor, resistive load, and a reference output voltage of 12 V. The PI controller dynamically adjusts the switch duty cycle to maintain the desired output. The simulation runs for 10 ms with a timestep corresponding to the PWM frequency of 50 kHz.
+
+During the simulation, several fault scenarios are introduced at different times. Between 4 ms and 6 ms, an open-circuit fault (OCF) is simulated by turning the switch off completely. Between 6 ms and 8 ms, a short-circuit fault (SCF) is simulated by keeping the switch permanently on. Between 8 ms and 10 ms, a load-short fault (LSF) is simulated by reducing the load resistance, representing a sudden increase in current demand. At each step, the inductor current and capacitor voltage are updated based on the controller output and the present fault condition.
+
+A residual signal is calculated as the difference between the reference voltage and the actual output voltage, and a simple threshold is applied to detect faults. If the residual exceeds 2 V, the simulation flags a fault. The results are plotted in three subplots: the output voltage with reference, the residual signal showing deviations, and a fault flag signal indicating when a fault is detected. This simulation demonstrates how a converter responds to different fault conditions and how a basic monitoring strategy can identify abnormal behavior, highlighting the importance of fault detection and system resilience in power electronics.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Parameters
+Vin = 24.0
+Vref = 12.0
+L = 200e-6
+C = 220e-6
+R_load = 10.0
+fs = 50e3
+dt = 1 / fs
+t_end = 0.01
+t = np.arange(0, t_end, dt)
+
+# PI Controller gains
+Kp = 0.05
+Ki = 500.0
+
+# Fault times
+fault_time = 0.004  # 4 ms
+
+# States
+iL = 0.0
+Vc = 0.0
+duty = 0.5
+integral = 0.0
+
+# Logging
+Vout_list = []
+iL_list = []
+duty_list = []
+fault_mode_list = []
+residuals = []
+fault_flags = []
+
+for ti in t:
+    # Controller error
+    error = Vref - Vc
+    integral += error * dt
+    duty = Kp * error + Ki * integral
+    duty = np.clip(duty, 0.0, 1.0)
+
+    # Fault injection
+    if ti > fault_time:
+        if 0.004 <= ti < 0.006:
+            mode = "OCF"  # Open-Circuit Fault
+            duty = 0.0
+        elif 0.006 <= ti < 0.008:
+            mode = "SCF"  # Short-Circuit Fault
+            duty = 1.0
+        elif 0.008 <= ti < 0.010:
+            mode = "LSF"  # Load Short Fault
+            R_load = 1.0
+        else:
+            mode = "Normal"
+    else:
+        mode = "Normal"
+
+    # Inductor voltage
+    Vsw = duty * Vin
+    dIL = (Vsw - Vc) / L * dt
+    iL += dIL
+
+    # Capacitor dynamics
+    dVc = (iL - Vc / R_load) / C * dt
+    Vc += dVc
+
+    # Residual
+    residual = abs(Vref - Vc)
+    residuals.append(residual)
+
+    # Fault flag (simple threshold detection)
+    threshold = 2.0
+    if residual > threshold:
+        fault_flags.append(1)
+    else:
+        fault_flags.append(0)
+
+    # Logging
+    Vout_list.append(Vc)
+    iL_list.append(iL)
+    duty_list.append(duty)
+    fault_mode_list.append(mode)
+
+# Convert logs
+Vout_list = np.array(Vout_list)
+iL_list = np.array(iL_list)
+residuals = np.array(residuals)
+fault_flags = np.array(fault_flags)
+
+# Plot results
+plt.figure(figsize=(12,8))
+
+plt.subplot(3,1,1)
+plt.plot(t, Vout_list, label="Vout (V)")
+plt.axhline(Vref, color='r', linestyle='--', label="Vref")
+plt.ylabel("Voltage (V)")
+plt.legend()
+plt.title("Buck Converter with Fault Injection")
+
+plt.subplot(3,1,2)
+plt.plot(t, residuals, label="Residual |Vref - Vout|")
+plt.axhline(2.0, color='r', linestyle='--', label="Threshold")
+plt.ylabel("Residual (V)")
+plt.legend()
+
+plt.subplot(3,1,3)
+plt.plot(t, fault_flags, label="Fault Detected (1=True)")
+plt.xlabel("Time (s)")
+plt.ylabel("Fault Flag")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+"""This code simulates adaptive fault detection in a buck converter by analyzing the residual between the reference voltage and the actual output voltage. The simulation defines a basic buck converter model with input voltage, inductor, capacitor, and resistive load, and updates the inductor current and capacitor voltage at each timestep. Fault conditions such as a switch short are introduced at a specified time, altering the converter behavior and causing deviations from the desired output.
+
+Residual signals are computed as the absolute difference between the reference voltage and the measured output voltage, providing a measure of deviation from normal operation. To detect faults more robustly, an adaptive thresholding technique is implemented. This method calculates a dynamic threshold based on the mean and standard deviation of residuals over a moving window, allowing the system to distinguish normal fluctuations from actual faults. The simulation compares the residual signal with the adaptive threshold and visually marks the time of fault injection.
+
+The results are plotted showing the residual signal in the presence of a fault alongside the adaptive threshold. This approach demonstrates how adaptive monitoring can improve fault detection by accounting for normal variations in converter operation, ensuring timely and reliable identification of abnormal conditions.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Reuse residuals from previous phase (simulate again if needed)
+def buck_fault_simulation(T=0.02, dt=1e-5, fault_mode=0):
+    Vin = 12; Vref = 5; R = 10; L = 100e-6; C = 100e-6
+    t = np.arange(0, T, dt)
+    Vout = np.zeros_like(t)
+    I_L = 0; V_C = 0
+    duty = 0.5
+    fault_start = int(0.01/dt)
+    for i in range(1, len(t)):
+        if fault_mode==1 and i>fault_start: duty = 0.0
+        elif fault_mode==2 and i>fault_start: duty = 1.0
+        elif fault_mode==3 and i>fault_start: R = 0.1
+
+        V_L = duty*Vin - V_C
+        I_L += (V_L/L)*dt
+        V_C += ((I_L - V_C/R)/C)*dt
+        Vout[i] = V_C
+    return t, Vout
+
+# Normal operation (baseline)
+t, Vout_normal = buck_fault_simulation(fault_mode=0)
+Vref = 5
+residual_normal = np.abs(Vout_normal - Vref)
+
+# Fault case: switch short
+t, Vout_fault = buck_fault_simulation(fault_mode=2)
+residual_fault = np.abs(Vout_fault - Vref)
+
+# Moving threshold function
+def adaptive_threshold(residual, W=500, k=3):
+    thresh = np.zeros_like(residual)
+    for i in range(len(residual)):
+        if i < W:
+            thresh[i] = np.mean(residual[:i+1]) + k*np.std(residual[:i+1])
+        else:
+            window = residual[i-W:i]
+            thresh[i] = np.mean(window) + k*np.std(window)
+    return thresh
+
+# Compute adaptive thresholds
+T_normal = adaptive_threshold(residual_normal)
+T_fault = adaptive_threshold(residual_fault)
+
+# Plot comparison
+plt.figure(figsize=(10,6))
+plt.plot(t*1000, residual_fault, label="Residual (Fault Case)", color="r")
+plt.plot(t*1000, T_fault, '--', label="Adaptive Threshold", color="b")
+plt.axvline(10, color='k', linestyle='--', label="Fault Injected at 10 ms")
+plt.xlabel("Time (ms)")
+plt.ylabel("Residual")
+plt.title("Phase 5: Adaptive Thresholding for Fault Detection")
+plt.legend()
+plt.grid()
+plt.show()
+
+"""This code implements a digital twin of a buck converter combined with machine learning-based fault diagnosis, integrating all the simulation phases from open-loop modeling to automatic fault classification. The simulation begins with a PWM-based buck converter model, which can operate in several modes, including normal operation, switch short, switch open, load disturbance, input voltage variation, and capacitor aging. The converter dynamics, including inductor current and capacitor voltage, are updated at each timestep using a simple discrete-time model. This allows the system to emulate realistic switching behavior under varying operating conditions.
+
+Core scenarios are first simulated individually to visualize the converter’s output voltage for each mode. From these simulations, features are extracted, such as the average output voltage, voltage ripple, variance, and the RMS value of inductor current. These features provide compact representations of the system behavior, which can be used for further analysis or classification. A feature-space visualization shows the separation of different operating conditions, confirming that the chosen features capture the essential differences between scenarios.
+
+To create a robust dataset for machine learning, many runs are generated for each selected mode, with small random variations in input voltage, load, inductance, capacitance, switching frequency, and duty cycle. This introduces realistic variability and ensures that the classifier can generalize across slightly different conditions. The resulting dataset contains 1000 samples with four key features per sample, balanced across four modes: Normal, Switch Short, Load Disturbance, and Input Variation.
+
+The dataset is then split into training and testing sets. A decision tree classifier is trained on the training set to automatically identify the operating mode based on the extracted features. The model is evaluated on the test set, producing a classification report and a confusion matrix, which demonstrate high accuracy in distinguishing the different fault and normal conditions. The decision tree itself can also be visualized, showing how the features are used hierarchically to classify each mode.
+
+This integrated approach demonstrates how a digital twin can simulate multiple fault and operating scenarios, extract meaningful features, and enable automated fault diagnosis using machine learning, providing a powerful framework for monitoring and maintaining buck converter systems in practice
+"""
+
+# =====================================================
+# Buck Converter Digital Twin + ML Fault Diagnosis
+# Phases 1 → 7 (single runnable script) — 1000 samples
+# =====================================================
+# Requirements: numpy, matplotlib, scikit-learn
+# =====================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+
+np.random.seed(42)
+
+# ---------------- Tunables for dataset size & sim speed ----------------
+T_SIM = 0.008     # seconds per run (shortened from 0.01 to save time)
+DT    = 5e-6      # integration step (5 µs)
+RUNS_PER_CLASS = 250  # 4 classes × 250 = 1000 samples total
+# ----------------------------------------------------------------------
+
+# -----------------------------------------------------
+# PHASE 1 — Buck Converter Simulator (PWM, open-loop)
+# -----------------------------------------------------
+def simulate_buck(mode="Normal", T=T_SIM, dt=DT,
+                  Vin_nom=12.0, L=1e-3, C=100e-6, R_nom=10.0,
+                  f_sw=20e3, D=0.5):
+    """
+    Simple switching buck model with piecewise PWM.
+    Modes:
+      - "Normal"
+      - "Switch_Short"       (MOSFET always ON)
+      - "Switch_Open"        (MOSFET always OFF)
+      - "Load_Disturbance"   (R steps at T/2 to heavier load)
+      - "Input_Variation"    (Vin sinusoidal ripple)
+      - "Cap_Aging"          (C reduced to mimic aging)
+    """
+    t = np.arange(0, T, dt)
+    N = len(t)
+
+    # Mutable per-step params
+    R = R_nom
+    Vin = Vin_nom
+    C_eff = C
+
+    # States
+    vC = 0.0
+    iL = 0.0
+
+    # Logs
+    Vout = np.zeros(N)
+    IL   = np.zeros(N)
+    duty_trace = np.zeros(N, dtype=float)
+
+    Tsw = 1.0 / f_sw
+
+    for k, tk in enumerate(t):
+        # Mode behavior
+        if mode == "Switch_Short":
+            duty = 1.0
+        elif mode == "Switch_Open":
+            duty = 0.0
+        elif mode == "Load_Disturbance":
+            duty = D
+            R = R_nom if tk < T/2 else max(1e-3, R_nom/2)  # step to heavier load
+        elif mode == "Input_Variation":
+            duty = D
+            Vin = Vin_nom + 2.0*np.sin(2*np.pi*100*tk)  # small 100 Hz ripple
+        elif mode == "Cap_Aging":
+            duty = D
+            C_eff = 0.3*C  # degraded capacitance
+        else:  # Normal
+            duty = D
+
+        # PWM switching
+        on = (tk % Tsw) < duty*Tsw
+        Vsw = Vin if on else 0.0
+
+        # State update (Euler)
+        diL = (Vsw - vC)/L * dt
+        iL  += diL
+        dvC = (iL - vC/R)/C_eff * dt
+        vC  += dvC
+
+        Vout[k] = vC
+        IL[k]   = iL
+        duty_trace[k] = duty
+
+    return t, Vout, IL, duty_trace
+
+
+# -----------------------------------------------------
+# PHASE 2 — Run Core Scenarios (single run each)
+# -----------------------------------------------------
+core_scenarios = ["Normal", "Switch_Short", "Switch_Open",
+                  "Load_Disturbance", "Input_Variation", "Cap_Aging"]
+
+plt.figure(figsize=(11,6))
+for name in core_scenarios:
+    t, Vout, IL, _ = simulate_buck(mode=name, T=0.01, dt=2e-6)  # longer, finer for the showcase plot
+    plt.plot(t*1e3, Vout, label=name)
+plt.title("Phase 2: Buck Output (single run per scenario)")
+plt.xlabel("Time [ms]"); plt.ylabel("Vout [V]"); plt.grid(True); plt.legend()
+plt.tight_layout(); plt.show()
+
+
+# -----------------------------------------------------
+# PHASE 3 — Feature Extraction (helpers)
+# -----------------------------------------------------
+def extract_features(t, Vout, IL):
+    """
+    Features:
+      - avg_v:   average output voltage
+      - ripple:  peak-to-peak voltage ripple
+      - var_v:   variance of Vout
+      - rms_i:   RMS inductor current
+    """
+    avg_v  = float(np.mean(Vout))
+    ripple = float(np.max(Vout) - np.min(Vout))
+    var_v  = float(np.var(Vout))
+    rms_i  = float(np.sqrt(np.mean(IL**2)))
+    return [avg_v, ripple, var_v, rms_i]
+
+
+# -----------------------------------------------------
+# PHASE 4 — Visualize Feature Space (from single runs)
+# -----------------------------------------------------
+single_features = {}
+for name in core_scenarios:
+    t_s, V_s, I_s, _ = simulate_buck(mode=name, T=T_SIM, dt=DT)
+    single_features[name] = extract_features(t_s, V_s, I_s)
+
+# Scatter 2D: Avg_V vs Ripple_V
+plt.figure(figsize=(7,5))
+for name, feats in single_features.items():
+    plt.scatter(feats[0], feats[1], s=100, label=name)
+plt.xlabel("Avg Vout [V]"); plt.ylabel("Ripple (Vpp) [V]")
+plt.title("Phase 4: Feature Space (single-run points)")
+plt.grid(True); plt.legend(); plt.tight_layout(); plt.show()
+
+
+# -----------------------------------------------------
+# PHASE 5 — Build a Dataset (many runs per class)
+# -----------------------------------------------------
+def randomize_params():
+    """Small random variations per run for realism."""
+    Vin_nom = 12.0 + np.random.uniform(-0.5, 0.5)    # ±0.5 V
+    R_nom   = 10.0 * (1.0 + np.random.uniform(-0.2, 0.2))  # ±20%
+    L       = 1e-3  * (1.0 + np.random.uniform(-0.1, 0.1)) # ±10%
+    C       = 100e-6* (1.0 + np.random.uniform(-0.2, 0.2)) # ±20%
+    f_sw    = 20e3  * (1.0 + np.random.uniform(-0.1, 0.1)) # ±10%
+    D       = 0.5   * (1.0 + np.random.uniform(-0.05,0.05))# ±5%
+    return Vin_nom, L, C, R_nom, f_sw, D
+
+# For classification we’ll keep 4 classes (balanced dataset)
+modes_for_dataset = ["Normal", "Switch_Short", "Load_Disturbance", "Input_Variation"]
+
+X = []   # features  [Avg_V, Ripple_V, Var_V, RMS_I]
+y = []   # labels    (mode name)
+
+for mode in modes_for_dataset:
+    for _ in range(RUNS_PER_CLASS):
+        Vin_nom, L, C, R_nom, f_sw, D = randomize_params()
+        t, Vout, IL, _ = simulate_buck(mode=mode, T=T_SIM, dt=DT,
+                                       Vin_nom=Vin_nom, L=L, C=C,
+                                       R_nom=R_nom, f_sw=f_sw, D=D)
+        feats = extract_features(t, Vout, IL)
+        X.append(feats)
+        y.append(mode)
+
+X = np.array(X)  # shape [1000, 4]
+y = np.array(y)  # shape [1000]
+
+print(f"Phase 5: Dataset built → X: {X.shape}, y: {y.shape}")
+
+
+# -----------------------------------------------------
+# PHASE 6 — Train/Test Split
+# -----------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.30, random_state=42, stratify=y
+)
+
+
+# -----------------------------------------------------
+# PHASE 7 — Train Model & Evaluate (Decision Tree)
+# -----------------------------------------------------
+clf = DecisionTreeClassifier(max_depth=6, random_state=42)
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+
+print("\nPhase 7: Classification Report\n")
+print(classification_report(y_test, y_pred, target_names=modes_for_dataset))
+
+cm = confusion_matrix(y_test, y_pred, labels=modes_for_dataset)
+plt.figure(figsize=(6.8,5.6))
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=modes_for_dataset)
+disp.plot(cmap="Blues", values_format="d", colorbar=False)
+plt.title("Phase 7: Confusion Matrix — Decision Tree")
+plt.tight_layout(); plt.show()
+
+# Optional: visualize the tree (great for reports)
+plt.figure(figsize=(16,8))
+plot_tree(clf, feature_names=["Avg_V", "Ripple_V", "Var_V", "RMS_I"],
+          class_names=modes_for_dataset, filled=True, rounded=True)
+plt.title("Decision Tree (max_depth=6)")
+plt.tight_layout(); plt.show()
+
+"""This code demonstrates synthetic dataset generation and fault classification using machine learning for a buck converter system. In the first phase, artificial signals are generated to mimic different operating conditions, including normal operation, switch short, load disturbance, and input voltage variation. Each signal contains minor noise to replicate real-world variability, ensuring that the dataset represents realistic scenarios. A total of 1000 samples are created, with 250 samples per class.
+
+Next, features are extracted from each signal in both the time and frequency domains. Time-domain features include mean, standard deviation, maximum and minimum values, skewness, kurtosis, and signal entropy. Frequency-domain features capture spectral characteristics such as spectral centroid, bandwidth, and energy. These features summarize the essential behavior of each signal, providing a compact representation for classification.
+
+The dataset is split into training and testing sets, maintaining class balance. A machine learning model are trained and evaluated: a Random Forest classifier. Both models are used to predict the operating condition of each signal based on its features. Model performance is assessed using classification reports and confusion matrices. The results show how well each model can distinguish between normal and faulty scenarios. The confusion matrix visualization highlights the classifier’s ability to correctly identify each class and helps interpret misclassifications.
+
+This approach demonstrates how synthetic data combined with feature extraction and machine learning can provide an effective framework for automated fault diagnosis in power electronics systems.
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import skew, kurtosis, entropy
+from scipy.fft import fft, fftfreq
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
+import seaborn as sns
+
+# -------------------------------
+# Phase 1: Synthetic Dataset Generation
+# -------------------------------
+def generate_signal(signal_type, length=100, noise=0.05):
+    t = np.linspace(0, 1, length)
+    if signal_type == "Normal":
+        signal = np.sin(2 * np.pi * 5 * t)
+    elif signal_type == "Switch_Short":
+        signal = np.sign(np.sin(2 * np.pi * 5 * t))  # square-like
+    elif signal_type == "Load_Disturbance":
+        signal = np.sin(2 * np.pi * 5 * t) + 0.5 * np.random.choice([0,1], size=length)
+    elif signal_type == "Input_Variation":
+        signal = np.sin(2 * np.pi * (5 + np.random.randint(1,5)) * t)
+    else:
+        signal = np.sin(2 * np.pi * 5 * t)
+
+    return signal + noise * np.random.randn(length)
+
+# Create dataset (1000 samples)
+classes = ["Normal", "Switch_Short", "Load_Disturbance", "Input_Variation"]
+data, labels = [], []
+
+for cls in classes:
+    for _ in range(250):  # 250 each = 1000 samples
+        data.append(generate_signal(cls))
+        labels.append(cls)
+
+data = np.array(data)
+labels = np.array(labels)
+
+# -------------------------------
+# Phase 2: Feature Extraction
+# -------------------------------
+def extract_features(signal):
+    # Time-domain features
+    feats = [
+        np.mean(signal),
+        np.std(signal),
+        np.max(signal),
+        np.min(signal),
+        skew(signal),
+        kurtosis(signal),
+        entropy(np.histogram(signal, bins=10)[0] + 1e-6)  # Shannon entropy
+    ]
+
+    # Frequency-domain features
+    fft_vals = np.abs(fft(signal))
+    freqs = fftfreq(len(signal), 1/100)  # assume sampling rate = 100 Hz
+    fft_vals = fft_vals[:len(signal)//2]
+    freqs = freqs[:len(signal)//2]
+
+    spectral_centroid = np.sum(freqs * fft_vals) / np.sum(fft_vals)
+    spectral_bandwidth = np.sqrt(np.sum(((freqs - spectral_centroid)**2) * fft_vals) / np.sum(fft_vals))
+    spectral_energy = np.sum(fft_vals**2)
+
+    feats.extend([spectral_centroid, spectral_bandwidth, spectral_energy])
+
+    return feats
+
+features = np.array([extract_features(sig) for sig in data])
+
+# -------------------------------
+# Phase 3: Train-Test Split
+# -------------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    features, labels, test_size=0.3, random_state=42, stratify=labels
+)
+
+# -------------------------------
+# Phase 4–6: Model Training
+# -------------------------------
+rf = RandomForestClassifier(n_estimators=200, random_state=42)
+rf.fit(X_train, y_train)
+rf_preds = rf.predict(X_test)
+
+
+
+# -------------------------------
+# Phase 7–8: Evaluation
+# -------------------------------
+
+print("Random Forest Results:\n", classification_report(y_test, rf_preds))
+
+# Confusion Matrix for RF
+plt.figure(figsize=(6,5))
+sns.heatmap(confusion_matrix(y_test, rf_preds), annot=True, fmt="d",
+            xticklabels=classes, yticklabels=classes, cmap="Blues")
+plt.title("Random Forest Confusion Matrix")
+plt.show()
+
+"""This workflow demonstrates synthetic signal generation and deep learning-based classification for buck converter fault detection. First, a synthetic dataset is created to mimic four different operating conditions: normal operation, input voltage variation, load disturbance, and switch short. Each signal contains random noise or disturbances to reflect realistic scenarios, and 1000 samples of fixed length are generated, ensuring sufficient data for training.
+
+Next, the data is preprocessed. Signals are standardized using a scaler to normalize their values, and the labels are encoded into numerical form for use in neural networks. Depending on the deep learning model type, the signals are reshaped accordingly: flat arrays for MLPs and sequences for CNN, LSTM, and hybrid CNN-LSTM models. The dataset is then split into training and testing sets to evaluate model generalization.
+
+Four different deep learning architectures are trained: a Multi-Layer Perceptron (MLP), a 1D Convolutional Neural Network (CNN), a Long Short-Term Memory network (LSTM), and a CNN-LSTM hybrid. Each model is trained to learn the patterns in the signals corresponding to different fault classes. Dropout layers are included to prevent overfitting.
+
+After training, models are evaluated on the test set. Classification reports and confusion matrices show how accurately each model identifies each operating condition, highlighting the strengths and weaknesses of different architectures. Training accuracy curves are also plotted to visualize convergence and overfitting trends.
+
+Overall, this project demonstrates how synthetic signals combined with modern deep learning architectures can provide a powerful approach for automated fault diagnosis in power electronics systems, allowing real-time detection of anomalies in buck converters without requiring physical fault testing.
+"""
+
+# ============================
+# Phase 1: Import Libraries
+# ============================
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Conv1D, MaxPooling1D, Flatten, LSTM
+
+# Reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# ============================
+# Phase 2: Generate Synthetic Dataset
+# ============================
+def generate_signal_data(n_samples=1000, seq_len=100):
+    X, y = [], []
+    classes = ["Normal", "Input_Variation", "Load_Disturbance", "Switch_Short"]
+
+    for _ in range(n_samples):
+        label = np.random.choice(classes)
+
+        if label == "Normal":
+            signal = np.sin(np.linspace(0, 2*np.pi, seq_len)) + np.random.normal(0, 0.1, seq_len)
+
+        elif label == "Input_Variation":
+            amp = np.random.uniform(0.5, 2.0)
+            signal = amp * np.sin(np.linspace(0, 2*np.pi, seq_len)) + np.random.normal(0, 0.1, seq_len)
+
+        elif label == "Load_Disturbance":
+            signal = np.sin(np.linspace(0, 2*np.pi, seq_len))
+            spike = np.random.randint(20, 80)
+            signal[spike: spike+5] += np.random.uniform(2, 3)
+
+        elif label == "Switch_Short":
+            signal = np.zeros(seq_len)
+            pos = np.random.randint(10, 90)
+            signal[pos: pos+10] = 1
+
+        X.append(signal)
+        y.append(label)
+
+    return np.array(X), np.array(y)
+
+X, y = generate_signal_data(n_samples=1000, seq_len=100)
+
+# ============================
+# Phase 3: Preprocessing
+# ============================
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Reshape for DL models
+X_mlp = X_scaled
+X_cnn = X_scaled.reshape(X.shape[0], X.shape[1], 1)
+X_lstm = X_scaled.reshape(X.shape[0], X.shape[1], 1)
+
+# Encode labels
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+y_categorical = tf.keras.utils.to_categorical(y_encoded)
+
+# Train-test split
+X_train_mlp, X_test_mlp, y_train, y_test = train_test_split(X_mlp, y_categorical, test_size=0.3, random_state=42)
+X_train_cnn, X_test_cnn, _, _ = train_test_split(X_cnn, y_categorical, test_size=0.3, random_state=42)
+X_train_lstm, X_test_lstm, _, _ = train_test_split(X_lstm, y_categorical, test_size=0.3, random_state=42)
+
+# ============================
+# Phase 4: Define Models
+# ============================
+
+# ---- MLP ----
+def build_mlp(input_dim, num_classes):
+    model = Sequential([
+        Dense(128, activation='relu', input_shape=(input_dim,)),
+        Dropout(0.3),
+        Dense(64, activation='relu'),
+        Dropout(0.3),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+# ---- CNN ----
+def build_cnn(input_shape, num_classes):
+    model = Sequential([
+        Conv1D(64, kernel_size=3, activation='relu', input_shape=input_shape),
+        MaxPooling1D(pool_size=2),
+        Dropout(0.3),
+        Conv1D(128, kernel_size=3, activation='relu'),
+        MaxPooling1D(pool_size=2),
+        Flatten(),
+        Dense(64, activation='relu'),
+        Dropout(0.3),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+# ---- LSTM ----
+def build_lstm(input_shape, num_classes):
+    model = Sequential([
+        LSTM(64, return_sequences=True, input_shape=input_shape),
+        Dropout(0.3),
+        LSTM(32),
+        Dropout(0.3),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+# ---- CNN+LSTM Hybrid ----
+def build_cnn_lstm(input_shape, num_classes):
+    model = Sequential([
+        Conv1D(64, kernel_size=3, activation='relu', input_shape=input_shape),
+        MaxPooling1D(pool_size=2),
+        Dropout(0.3),
+        LSTM(64),
+        Dropout(0.3),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+# ============================
+# Phase 5: Train Models
+# ============================
+num_classes = y_categorical.shape[1]
+
+mlp = build_mlp(X_train_mlp.shape[1], num_classes)
+cnn = build_cnn((X_train_cnn.shape[1], 1), num_classes)
+lstm = build_lstm((X_train_lstm.shape[1], 1), num_classes)
+cnn_lstm = build_cnn_lstm((X_train_cnn.shape[1], 1), num_classes)
+
+history_mlp = mlp.fit(X_train_mlp, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=0)
+history_cnn = cnn.fit(X_train_cnn, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=0)
+history_lstm = lstm.fit(X_train_lstm, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=0)
+history_cnn_lstm = cnn_lstm.fit(X_train_cnn, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=0)
+
+# ============================
+# Phase 6: Evaluate Models
+# ============================
+def evaluate_model(model, X_test, y_test, name):
+    y_pred = model.predict(X_test)
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    y_true = np.argmax(y_test, axis=1)
+
+    print(f"\n{name} Results:")
+    print(classification_report(y_true, y_pred_classes, target_names=label_encoder.classes_))
+
+    cm = confusion_matrix(y_true, y_pred_classes)
+    plt.figure(figsize=(6,4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=label_encoder.classes_,
+                yticklabels=label_encoder.classes_)
+    plt.title(f"{name} Confusion Matrix")
+    plt.show()
+
+evaluate_model(mlp, X_test_mlp, y_test, "MLP")
+evaluate_model(cnn, X_test_cnn, y_test, "CNN")
+evaluate_model(lstm, X_test_lstm, y_test, "LSTM")
+evaluate_model(cnn_lstm, X_test_cnn, y_test, "CNN+LSTM")
+
+# ============================
+# Phase 7: Training Curves
+# ============================
+def plot_history(history, title):
+    plt.figure(figsize=(6,4))
+    plt.plot(history.history['accuracy'], label='train acc')
+    plt.plot(history.history['val_accuracy'], label='val acc')
+    plt.title(title)
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.show()
+
+plot_history(history_mlp, "MLP Training")
+plot_history(history_cnn, "CNN Training")
+plot_history(history_lstm, "LSTM Training")
+plot_history(history_cnn_lstm, "CNN+LSTM Training")
+
